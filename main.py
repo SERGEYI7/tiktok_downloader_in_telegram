@@ -123,7 +123,9 @@ def loader(url: str) -> Result:
     options = uc.ChromeOptions()
     options.add_argument("headless")
 
-    driver = uc.Chrome(driver_executable_path=ChromeDriverManager().install(), options=options, version_main=None, use_subprocess=False)
+    path_driver = ChromeDriverManager().install()
+    print(path_driver)
+    driver = uc.Chrome(driver_executable_path=path_driver, options=options, version_main=None, use_subprocess=False)
 
     print("Открываю страницу...")
     driver.get(url)
