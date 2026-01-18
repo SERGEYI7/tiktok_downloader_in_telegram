@@ -12,6 +12,7 @@ from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.types import Message, FSInputFile
 
+from webdriver_manager.chrome import ChromeDriverManager
 import undetected_chromedriver as uc
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
@@ -121,7 +122,8 @@ def loader(url: str) -> Result:
 
     options = uc.ChromeOptions()
     options.add_argument("headless")
-    driver = uc.Chrome(options=options, version_main=None, use_subprocess=False)
+
+    driver = uc.Chrome(driver_executable_path=ChromeDriverManager().install(), options=options, version_main=None, use_subprocess=False)
 
     print("Открываю страницу...")
     driver.get(url)
