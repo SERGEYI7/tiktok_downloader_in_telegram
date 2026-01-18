@@ -1,7 +1,10 @@
 from os import getenv
+import os
 import asyncio
 import logging
 import sys
+import time
+from pprint import pprint
 
 from aiogram import Bot, Dispatcher, html
 from aiogram.client.default import DefaultBotProperties
@@ -9,6 +12,10 @@ from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.types import Message, FSInputFile
 
+import undetected_chromedriver as uc
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
 import requests
 import re
 import json
@@ -23,13 +30,86 @@ load_dotenv()
 @dataclasses.dataclass
 class Result:
     status: bool
-    message: str
+    message: str = ""
+    path_video: str = ""
+    path_screenshot: str = ""
 
+def check_login(driver: uc.Chrome) -> Result:
+    wait = WebDriverWait(driver, 20)
+    page_lower = driver.page_source.lower()
+
+    blocked_phrases = [
+        'войдите в tiktok',
+        'эта публикация содержит',
+        'log in to tiktok',
+        'sign in to continue'
+    ]
+
+    try:
+        wait.until(EC.presence_of_element_located((By.ID, "loginContainer")))
+        path = "message.png"
+        driver.save_screenshot(path)
+        return Result(False, f"Найдена фраза блокировки: {{phrase}}", "", path)
+        # element = wait.until(
+        #     EC.presence_of_element_located(
+        #         (By.XPATH, "//div[contains(@class, 'DivLoginOptionContainer')]")
+        #     )
+        # )
+    except:
+        pass
+
+    # for phrase in blocked_phrases:
+    #     if phrase in page_lower:
+    #         path = "message.png"
+    #         driver.save_screenshot(path)
+    #         try:
+    #             wait.until(EC.presence_of_element_located((By.ID, "loginContainer")))
+    #             return Result(False, f"Найдена фраза блокировки: {phrase}", "", path)
+    #             # element = wait.until(
+    #             #     EC.presence_of_element_located(
+    #             #         (By.XPATH, "//div[contains(@class, 'DivLoginOptionContainer')]")
+    #             #     )
+    #             # )
+    #         except:
+    #             pass
+            #     try:
+            #
+            #         # data_e2e = element.find_element(By.XPATH, ".//div[@data-e2e='channel-item']")
+            #         data_e2e_wait = WebDriverWait(element, 20)
+            #         data_e2e = data_e2e_wait.until(EC.element_to_be_clickable((By.XPATH, ".//div[@data-e2e='channel-item']")))
+            #         print("Find data_e2e")
+            #
+            #         data_e2e.click()
+            #         try:
+            #             wait.until(
+            #                 EC.presence_of_element_located(
+            #                     (By.XPATH, "//div[contains(text(), 'Отсканируйте')]")
+            #                 )
+            #             )
+            #             print("Появился сканируйте")
+            #         except:
+            #             print("не появился сканируйте")
+            #         time.sleep(2)
+            #         driver.save_screenshot(path)
+            #     except:
+            #         print("Не нашли data_e2e")
+            #
+            #     element_qr_text = element.find_element(By.XPATH, ".//div[contains(text(), 'Введите QR-код')]")
+            #     if element_qr_text.is_selected():
+            #         print("Is selected")
+            #     else:
+            #         print("Is not selected")
+            #     # "//*[@id="loginContainer"]/div[1]/div/div"
+            #     print("Найдена кнопка куар кода")
+            # except:
+            #     print("Не найдена кнопка куар кода")
+            # return Result(False, f"Найдена фраза блокировки: {phrase}", "", path)
+    return Result(True, "Non login form", "", "")
 
 def loader(url: str) -> Result:
     result = urlparse(url)
     if not (result.scheme and result.netloc):
-        return Result(False, "Битая ссылка")
+        return Result(False, "Битая ссылка", "", "")
 
     s = requests.Session()
 
@@ -39,12 +119,35 @@ def loader(url: str) -> Result:
             'Safari/537.36',
     }
 
-    response = s.get(url, headers=headers, allow_redirects=True)
-    response_html = response.text
+    options = uc.ChromeOptions()
+    options.add_argument("headless")
+    driver = uc.Chrome(options=options, version_main=None, use_subprocess=False)
+
+    print("Открываю страницу...")
+    driver.get(url)
+
+    wait = WebDriverWait(driver, 20)
+    wait.until(
+        EC.presence_of_element_located((By.ID, "__UNIVERSAL_DATA_FOR_REHYDRATION__"))
+    )
+
+    result_check_login = check_login(driver)
+    if not result_check_login.status:
+        return result_check_login
+
+#/////
+
+    response_html = driver.page_source
     re_compile = re.compile(r"<script id=\"__UNIVERSAL_DATA_FOR_REHYDRATION__\"[^>]*>(.*?)</script>", re.DOTALL)
     match = re_compile.search(response_html)
+
     if not match:
-        return Result(False, "Видео не найдено")
+        pprint(response_html)
+        return Result(False, "Видео не найдено а именно __UNIVERSAL_DATA_FOR_REHYDRATION__", "", "")
+
+    # find_title = driver.find_element(By.XPATH, "//*[@id=\"main-content-video_detail\"]/div/div[2]/div/div[1]/div[1]/div[3]/div/div/div[1]/p[1]")
+    # if find_title:
+    #     print("сработало")
 
     js: dict = json.loads(match.group(1))
 
@@ -60,7 +163,12 @@ def loader(url: str) -> Result:
     elif download_addr:
         url_video = download_addr
     else:
-        return Result(False, "Видео не найдено")
+        return Result(False, "Видео не найдено тупо ссылок нет")
+
+    cookies = driver.get_cookies()
+
+    for cookie in cookies:
+        s.cookies.set(cookie['name'], cookie['value'])
 
     video_headers = {
         'User-Agent': headers['User-Agent'],
@@ -118,9 +226,15 @@ async def echo_handler(message: Message) -> None:
     """
     result = loader(message.text)
     if result.status:
-        await message.answer_video(video=FSInputFile(result.message))
+        answer_video = await message.answer_video(video=FSInputFile(result.message))
+        os.remove(result.message)
     else:
         await message.answer(result.message)
+        proc = await message.answer_photo(FSInputFile(result.path_screenshot))
+        sleep = await asyncio.sleep(1)
+        # time.sleep(1)
+        os.remove(result.path_screenshot)
+
 
 
 async def main() -> None:
