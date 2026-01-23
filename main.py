@@ -5,6 +5,8 @@ import logging
 import sys
 import time
 from pprint import pprint
+import re
+import subprocess
 
 from aiogram import Bot, Dispatcher, html
 from aiogram.client.default import DefaultBotProperties
@@ -120,12 +122,39 @@ def loader(url: str) -> Result:
             'Safari/537.36',
     }
 
-    options = uc.ChromeOptions()
-    options.add_argument("headless")
+    result_subprocess = subprocess.run(['chromium-browser', '--version'], capture_output=True, text=True)
+    full_version: str = re.findall(r" ([\d.]*) ", result_subprocess.stdout)[0]
+    major_version = full_version.split('.')[0]
 
-    path_driver = ChromeDriverManager().install()
-    print(path_driver)
-    driver = uc.Chrome(driver_executable_path=path_driver, options=options, version_main=None, use_subprocess=False)
+    options = uc.ChromeOptions()
+    options.binary_location = '/usr/bin/chromium-browser'
+
+    headless_args = [
+        '--headless=new',
+        '--no-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-extensions',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+        '--remote-debugging-port=9222',
+        '--window-size=1920,1080',
+        '--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    ]
+    
+    for arg in headless_args:
+        options.add_argument(arg)
+
+#    options.add_argument('--headless=new')
+#    options.add_argument('--no-sandbox')
+#    options.add_argument('--disable-dev-shm-usage')
+#    options.add_argument('--disable-gpu')
+#    options.add_argument('--disable-software-rasterizer')
+
+#    path_driver = ChromeDriverManager().install()
+#    print(path_driver)
+    driver = uc.Chrome(options=options, version_main=int(major_version), use_subprocess=False)
 
     print("Открываю страницу...")
     driver.get(url)
@@ -137,6 +166,7 @@ def loader(url: str) -> Result:
 
     result_check_login = check_login(driver)
     if not result_check_login.status:
+        driver.quit()
         return result_check_login
 
 #/////
@@ -147,6 +177,7 @@ def loader(url: str) -> Result:
 
     if not match:
         pprint(response_html)
+        driver.quit()
         return Result(False, "Видео не найдено а именно __UNIVERSAL_DATA_FOR_REHYDRATION__", "", "")
 
     # find_title = driver.find_element(By.XPATH, "//*[@id=\"main-content-video_detail\"]/div/div[2]/div/div[1]/div[1]/div[3]/div/div/div[1]/p[1]")
@@ -167,6 +198,7 @@ def loader(url: str) -> Result:
     elif download_addr:
         url_video = download_addr
     else:
+        driver.quit()
         return Result(False, "Видео не найдено тупо ссылок нет")
 
     cookies = driver.get_cookies()
@@ -196,8 +228,10 @@ def loader(url: str) -> Result:
                     f.write(chunk)
                     total_size += len(chunk)
 
+        driver.quit()
         return Result(True, filename)
     else:
+        driver.quit()
         return Result(False, f"❌ Ошибка скачивания: {response_video.status_code}")
 
 
