@@ -1,6 +1,0 @@
-requests
-aiogram
-python-dotenv
-undetected-chromedriver
-setuptools
-webdriver-manager
