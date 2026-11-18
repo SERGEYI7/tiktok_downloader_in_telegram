@@ -16,6 +16,11 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
+type TikTokDown struct {
+	ctx        context.Context
+	ctx_cancel context.CancelFunc
+}
+
 type Page struct {
 	Scope struct {
 		Detail struct {
@@ -33,8 +38,8 @@ type Page struct {
 
 // download скачивает videoURL в path. Использует cookies и User-Agent
 // браузера из ctx, поэтому вызывать нужно, пока браузер ещё открыт.
-func download(ctx context.Context, videoURL, path string) error {
-	ck, err := chromedp.Call(ctx, network.GetCookies, network.GetCookiesParams{})
+func (t TikTokDown) download(videoURL, path string) error {
+	ck, err := chromedp.Call(t.ctx, network.GetCookies, network.GetCookiesParams{})
 	if err != nil {
 		return err
 	}
@@ -42,12 +47,12 @@ func download(ctx context.Context, videoURL, path string) error {
 	for _, c := range ck.Cookies {
 		parts = append(parts, c.Name+"="+c.Value)
 	}
-	ua, err := chromedp.Run(ctx, chromedp.Evaluate[string](`navigator.userAgent`))
+	ua, err := chromedp.Run(t.ctx, chromedp.Evaluate[string](`navigator.userAgent`))
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, videoURL, nil)
+	req, err := http.NewRequestWithContext(t.ctx, http.MethodGet, videoURL, nil)
 	if err != nil {
 		return err
 	}
@@ -73,25 +78,27 @@ func download(ctx context.Context, videoURL, path string) error {
 	return err
 }
 
-func main__() {
+func (t *TikTokDown) ParseTikTokLink(link string) (string, bool) {
 	ctx, cancel := chromedp.NewContext(context.Background())
-	defer cancel()
-	// if err != nil {
-	// 	panic(err)
-	// }
+	t.ctx = ctx
+	t.ctx_cancel = cancel
 
-	if err := chromedp.Do(ctx, chromedp.Navigate("https://vt.tiktok.com/ZSppVAvsu/")); err != nil {
-		panic("error navigate")
+	if err := chromedp.Do(t.ctx, chromedp.Navigate(link)); err != nil {
+		fmt.Println("error navigate")
+		return "", false
 	}
 
-	res, err := chromedp.Run(ctx, chromedp.OuterHTML(`html`))
+	res, err := chromedp.Run(t.ctx, chromedp.OuterHTML(`html`))
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return "", false
 	}
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(res))
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return "", false
+		// panic(err)
 	}
 
 	var data Page
@@ -99,26 +106,26 @@ func main__() {
 	err = json.Unmarshal([]byte(find_rehydration), &data)
 	if err != nil {
 		fmt.Println("Ничего нет???? ", find_rehydration)
-		panic(err)
+		return "", false
+		// panic(err)
 	}
 
-	fmt.Println(data.Scope.Detail.ItemInfo.ItemStruct.Video.PlayAddr)
-
-	v := data.Scope.Detail.ItemInfo.ItemStruct.Video
-	if err := download(ctx, v.PlayAddr, "video.mp4"); err != nil {
-		panic(err)
-	}
-
-	// if !json.Valid([]byte(res)) {
-	// 	panic("Не то взял")
-	// }
-
-	buf, err := chromedp.Run(ctx, chromedp.CaptureScreenshot())
-	if err != nil {
-		panic(err)
-	}
-
-	os.WriteFile("probe.png", buf, 0o777)
-
-	fmt.Println("Готово")
+	// fmt.Println(data.Scope.Detail.ItemInfo.ItemStruct.Video.PlayAddr)
+	return data.Scope.Detail.ItemInfo.ItemStruct.Video.PlayAddr, true
 }
+
+// func main__() {
+
+// 	// if !json.Valid([]byte(res)) {
+// 	// 	panic("Не то взял")
+// 	// }
+
+// 	// buf, err := chromedp.Run(ctx, chromedp.CaptureScreenshot())
+// 	// if err != nil {
+// 	// 	panic(err)
+// 	// }
+
+// 	// os.WriteFile("probe.png", buf, 0o777)
+
+// 	// fmt.Println("Готово")
+// }
